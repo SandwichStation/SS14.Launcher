@@ -64,6 +64,17 @@ jobs:
         private-key: ${{ secrets.APP_PRIVATE_KEY }}
     # --- END OF TOKEN GENERATION ---
 
+    # Determine if this is a pre-release
+    - name: Check for Alpha/Beta
+      id: prerelease_check
+      run: |
+        TAG_NAME="${{ github.ref_name }}"
+        if echo "$TAG_NAME" | grep -qiE '(alpha|beta)'; then
+          echo "prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
@@ -73,7 +84,7 @@ jobs:
         tag_name: ${{ github.ref }}
         release_name: Release ${{ github.ref }}
         draft: false
-        prerelease: false
+        prerelease: ${{ steps.prerelease_check.outputs.prerelease }}
 
     # Upload Linux
     - name: Upload Release Asset
