@@ -1,0 +1,286 @@
+name: Sign and Publish Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to sign'
+        required: true
+        type: string
+
+jobs:
+  sign-and-publish:
+    runs-on: [self-hosted, signing]
+
+    steps:
+      - name: Generate App Token
+        id: bot-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+
+      - name: Determine Tag Name
+        id: tag_name
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.version }}"
+          if (-not $tag.StartsWith("v")) {
+            Write-Error "Tag must start with 'v'. Received: $tag"
+            exit 1
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Determine Release Flags
+        id: release_flags
+        shell: pwsh
+        run: |
+          $tagLower = "${{ steps.tag_name.outputs.tag }}".ToLower()
+          $isPreRelease = "false"
+          $isDraft = "false"
+          
+          if ($tagLower -match "alpha" -or $tagLower -match "beta") {
+            $isPreRelease = "true"
+          } elseif ($tagLower -match "test") {
+            $isPreRelease = "true"
+            $isDraft = "true"
+          }
+          
+          "prerelease=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "draft=$isDraft" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          tag_name: ${{ steps.tag_name.outputs.tag }}
+          release_name: Release ${{ steps.tag_name.outputs.tag }}
+          draft: ${{ steps.release_flags.outputs.draft }}
+          prerelease: ${{ steps.release_flags.outputs.prerelease }}
+
+      - name: Download Unsigned Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-builds-${{ github.sha }}
+          path: ./build-output
+
+      - name: Sign All Artifacts & Generate Formatted Hashes
+        shell: pwsh
+        run: |
+          Write-Host "Starting Signing (VS Build Tools 2022) & Hash Generation..."
+          Write-Host "Ensure YubiKey is plugged in and VirtualHere is connected."
+          
+          $formattedLines = @()
+          
+          $signtoolPath = $null
+          
+          $vsBase = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools"
+          if (Test-Path $vsBase) {
+            $sdkBin = Join-Path $vsBase "VC\Tools\MSVC"
+            if (Test-Path $sdkBin) {
+              $latestMsvc = Get-ChildItem $sdkBin | Sort-Object Name -Descending | Select-Object -First 1
+              $signtoolPath = Join-Path $latestMsvc.FullName "bin\Hostx64\x64\signtool.exe"
+            }
+          }
+          
+          if (-not (Test-Path $signtoolPath)) {
+            $kitBin = "C:\Program Files (x86)\Windows Kits\10\bin"
+            if (Test-Path $kitBin) {
+              $latestKit = Get-ChildItem $kitBin -Directory | Sort-Object Name -Descending | Select-Object -First 1
+              $signtoolPath = Join-Path $latestKit.FullName "x64\signtool.exe"
+            }
+          }
+
+          if (-not (Test-Path $signtoolPath)) {
+            Write-Error "signtool.exe not found. Ensure 'Visual Studio Build Tools 2022' with 'C++ Build Tools' is installed."
+            exit 1
+          }
+
+          $winFiles = @(
+            "./build-output/SS14.Launcher_Windows.zip",
+            "./build-output/Space Station 14 Launcher.exe"
+          )
+
+          foreach ($file in $winFiles) {
+            if (Test-Path $file) {
+              Write-Host "Signing Windows: $file"
+              
+              & $signtoolPath sign `
+                /tr "http://timestamp.digicert.com" `
+                /td sha256 `
+                /fd sha256 `
+                /sm `
+                /kp "Microsoft Base Smart Card Crypto Provider" `
+                /n "SandwichStation-Code" ` # REPLACE WITH YOUR CERT CN if your not us!
+                $file
+                
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Windows signing failed for $file. Did you touch the YubiKey?"
+                exit 1
+              }
+              
+              $hash = (Get-FileHash -Path $file -Algorithm SHA256).Hash
+              $fileName = $file.Substring(14)
+              $formattedLines += "- $fileName ``$hash``"
+              Write-Host "Signed & Hashed: $fileName"
+            }
+          }
+
+          # --- 3. SIGN LINUX/MAC FILES (GPG) ---
+          $gpgPath = "C:\Program Files (x86)\GnuPG\bin\gpg.exe"
+          if (-not (Test-Path $gpgPath)) {
+            $gpgPaths = @("C:\Program Files\GnuPG\bin\gpg.exe", "gpg")
+            foreach ($p in $gpgPaths) { if (Get-Command $p -ErrorAction SilentlyContinue) { $gpgPath = $p; break } }
+          }
+
+          $nixFiles = @(
+            "./build-output/SS14.Launcher_Linux.zip",
+            "./build-output/SS14.Launcher_macOS.zip"
+          )
+
+          if (Test-Path $gpgPath) {
+            foreach ($file in $nixFiles) {
+              if (Test-Path $file) {
+                Write-Host "Signing Unix: $file"
+                & $gpgPath --batch --yes --detach-sign --armor $file
+                
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Error "GPG signing failed for $file."
+                  exit 1
+                }
+                
+                $hash = (Get-FileHash -Path $file -Algorithm SHA256).Hash
+                $fileName = $file.Substring(14)
+                $formattedLines += "- $fileName ``$hash``"
+                Write-Host "Signed & Hashed: $fileName"
+                
+                $ascFile = "$file.asc"
+                if (Test-Path $ascFile) {
+                  $ascHash = (Get-FileHash -Path $ascFile -Algorithm SHA256).Hash
+                  $ascName = $ascFile.Substring(14)
+                  $formattedLines += "- $ascName ``$ascHash``"
+                }
+              }
+            }
+          } else {
+            Write-Warning "gpg.exe not found. Skipping Linux/Mac signing."
+          }
+
+          $sumsPath = "./build-output/SHA256SUMS.txt"
+          $standardLines = $formattedLines | ForEach-Object {
+            if ($_ -match "^-\s+(.+)\s+``([a-f0-9]+)``$") {
+              "$($matches[2])  $($matches[1])"
+            }
+          }
+          $standardLines | Set-Content -Path $sumsPath
+          Write-Host "Created: $sumsPath"
+          
+          $releaseBodySection = $formattedLines -join "`n"
+          "sha_markdown=$releaseBodySection" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Update Release with SHA256
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          script: |
+            const shaMarkdown = process.env.sha_markdown;
+            const releaseId = '${{ steps.create_release.outputs.id }}';
+            
+            const { data: release } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId
+            });
+
+            const newBody = `${release.body}\n\n## SHA256 Hashes for verification:\n${shaMarkdown}`;
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              body: newBody
+            });
+
+      - name: Upload Signed Windows Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build-output/SS14.Launcher_Windows.zip
+          asset_name: SS14.Launcher_Windows.zip
+          asset_content_type: application/zip
+
+      - name: Upload Signed Bootstrap
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build-output/Space Station 14 Launcher.exe
+          asset_name: Space Station 14 Launcher.exe
+          asset_content_type: application/x-msdownload
+
+      - name: Upload Signed Linux Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build-output/SS14.Launcher_Linux.zip
+          asset_name: SS14.Launcher_Linux.zip
+          asset_content_type: application/zip
+
+      - name: Upload Signed macOS Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build-output/SS14.Launcher_macOS.zip
+          asset_name: SS14.Launcher_macOS.zip
+          asset_content_type: application/zip
+
+      - name: Upload GPG Signatures
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build-output/SS14.Launcher_Linux.zip.asc
+          asset_name: SS14.Launcher_Linux.zip.asc
+          asset_content_type: application/pgp-signature
+
+      - name: Upload GPG Signature (macOS)
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build-output/SS14.Launcher_macOS.zip.asc
+          asset_name: SS14.Launcher_macOS.zip.asc
+          asset_content_type: application/pgp-signature
+
+      - name: Upload SHA256SUMS.txt
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build-output/SHA256SUMS.txt
+          asset_name: SHA256SUMS.txt
+          asset_content_type: text/plain
+
+      - name: Cleanup
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force ./build-output
+          Write-Host "Local artifacts cleaned up."
