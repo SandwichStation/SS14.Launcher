@@ -46,6 +46,7 @@ jobs:
       with:
         submodules: 'recursive'
 
+    # 1. Generate Token FIRST
     - name: Generate Bot Token
       id: bot-token
       uses: actions/create-github-app-token@v1
@@ -53,6 +54,48 @@ jobs:
         app-id: ${{ secrets.APP_ID }}
         private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
+    # 2. Validate App Token Permissions
+    - name: Validate App Token Permissions
+      run: |
+        echo "Validating App Token permissions..."
+        
+        # Check Read Access
+        READ_RESP=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer ${{ steps.bot-token.outputs.token }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}")
+        READ_CODE=$(echo "$READ_RESP" | tail -n1)
+        
+        if [ "$READ_CODE" != "200" ]; then
+          echo "::error:: Read check failed (HTTP $READ_CODE). Token might be invalid or App not installed to repo."
+          exit 1
+        fi
+        echo "Read access verified."
+
+        # Check Write Access
+        TEST_TAG="validation-check-$(date +%s)"
+        
+        WRITE_RESP=$(curl -s -w "\n%{http_code}" -X POST -H "Authorization: Bearer ${{ steps.bot-token.outputs.token }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          -H "Content-Type: application/json" \
+          -d "{\"tag_name\": \"$TEST_TAG\", \"name\": \"Validation Check\", \"body\": \"Auto-validation\", \"draft\": true, \"prerelease\": false}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases")
+        WRITE_CODE=$(echo "$WRITE_RESP" | tail -n1)
+        
+        if [ "$WRITE_CODE" == "403" ]; then
+          echo "::error:: Write check failed (HTTP 403)."
+          echo "The App Token does not have 'contents: write' permission."
+          exit 1
+        elif [ "$WRITE_CODE" == "201" ] || [ "$WRITE_CODE" == "422" ]; then
+          echo "Write access verified (HTTP $WRITE_CODE)."
+        else
+          echo "Unexpected write response: $WRITE_CODE"
+        fi
+        
+        echo "Token validation successful. Proceeding..."
+      env:
+        GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
+
+    # 3. Setup .NET
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
@@ -69,6 +112,7 @@ jobs:
     - name: Create build (Windows)
       run: ./publish.py windows --x64-only
 
+    # 4. Determine Tag Name (Handle both push and manual dispatch)
     - name: Determine Tag Name
       id: tag_name
       run: |
@@ -87,7 +131,7 @@ jobs:
         echo "tag=$TAG" >> $GITHUB_OUTPUT
         echo "Using tag: $TAG"
 
-    # Determine Release Flags (Alpha, Beta, Test, or Stable)
+    # 5. Determine Release Flags (Alpha, Beta, Test, or Stable)
     - name: Determine Release Flags
       id: release_flags
       run: |
@@ -112,7 +156,7 @@ jobs:
         echo "prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
         echo "draft=$IS_DRAFT" >> $GITHUB_OUTPUT
 
-    # Create Release
+    # 6. Create Release
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
