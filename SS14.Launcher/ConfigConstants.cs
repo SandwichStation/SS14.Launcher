@@ -5,8 +5,8 @@ namespace SS14.Launcher;
 
 public static class ConfigConstants
 {
-    public const string CurrentLauncherVersion = "61";
-    public static readonly bool DoVersionCheck = true;
+    public const string CurrentLauncherVersion = "S1";
+    public static readonly bool DoVersionCheck = false;
 
     // Refresh login tokens if they're within <this much> of expiry.
     public static readonly TimeSpan TokenRefreshThreshold = TimeSpan.FromDays(15);
@@ -29,8 +29,8 @@ public static class ConfigConstants
     private static readonly UrlFallbackSetStats StatsHubInfra = new(2);
 
     public static readonly UrlFallbackSet AuthUrl = new(["https://auth.spacestation14.com/", "https://auth.fallback.spacestation14.com/"], StatsHubInfra);
-    public static readonly UrlFallbackSet[] DefaultHubUrls = [new(["https://hub.spacestation14.com/", "https://hub.fallback.spacestation14.com/"], StatsHubInfra)];
-    public const string DiscordUrl = "https://discord.ss14.io/";
+    public static readonly UrlFallbackSet[] DefaultHubUrls = [new(["https://hub.sandwich14.com/", "https://backuphub.sandwich14.com/"], StatsHubInfra)];
+    public const string DiscordUrl = "https://discord.sandwich14.com";
     public const string AccountBaseUrl = "https://account.spacestation14.com/Identity/Account/";
     public const string AccountManagementUrl = $"{AccountBaseUrl}Manage";
     public const string AccountRegisterUrl = $"{AccountBaseUrl}Register";
@@ -46,8 +46,8 @@ public static class ConfigConstants
     ]);
 
     private static readonly UrlFallbackSet LauncherDataBaseUrl = new([
-        "https://launcher-data.cdn.spacestation14.com/",
-        "https://launcher-data.fallback.cdn.spacestation14.com/"
+        "https://hub.sandwich14.com/",
+        "https://backuphub.sandwich14.com/"
     ]);
 
     public static readonly UrlFallbackSet RobustBuildsManifest = RobustBuildsBaseUrl + "manifest.json";
@@ -60,7 +60,7 @@ public static class ConfigConstants
     public static readonly UrlFallbackSet UrlLauncherInfo = LauncherDataBaseUrl + "info.json";
     public static readonly UrlFallbackSet UrlAssetsBase = LauncherDataBaseUrl + "assets/";
 
-    public const string FallbackUsername = "JoeGenero";
+    public const string FallbackUsername = "PlainBread";
 
     static ConfigConstants()
     {

@@ -57,6 +57,7 @@
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Tmds.DBus.Protocol" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="TerraFX.Interop.Windows" />
     <PackageReference Include="NSec.Cryptography" />
@@ -73,6 +74,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Remove="Utility\runtime.json" />
+    <EmbeddedResource Include="Models\Data\Migrations\Script0006_Hubs.sql.old" />
     <EmbeddedResource Include="Utility\runtime.json">
       <LogicalName>Utility.runtime.json</LogicalName>
     </EmbeddedResource>
@@ -92,6 +94,9 @@
     <Content Include="signing_key">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Models\Data\Migrations\Script0006_Hubs.sql" />
   </ItemGroup>
   <Import Project="..\MSBuild\Robust.Trimming.targets" />
 </Project>
