@@ -4,6 +4,13 @@ on:
   push:
     tags:
     - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to create (e.g., v0.0-TEST)'
+        required: true
+        default: 'v0.0-TEST'
+        type: string
 
 jobs:
   build-windows-bootstrap:
@@ -39,6 +46,13 @@ jobs:
       with:
         submodules: 'recursive'
 
+    - name: Generate Bot Token
+      id: bot-token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.APP_ID }}
+        private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
@@ -55,36 +69,60 @@ jobs:
     - name: Create build (Windows)
       run: ./publish.py windows --x64-only
 
-    # --- START OF TOKEN GENERATION ---
-    - name: Generate Bot Token
-      id: bot-token
-      uses: actions/create-github-app-token@v1
-      with:
-        app-id: ${{ secrets.APP_ID }}
-        private-key: ${{ secrets.APP_PRIVATE_KEY }}
-    # --- END OF TOKEN GENERATION ---
-
-    # Determine if this is a pre-release
-    - name: Check for Alpha/Beta
-      id: prerelease_check
+    - name: Determine Tag Name
+      id: tag_name
       run: |
-        TAG_NAME="${{ github.ref_name }}"
-        if echo "$TAG_NAME" | grep -qiE '(alpha|beta)'; then
-          echo "prerelease=true" >> $GITHUB_OUTPUT
+        if [ "${{ github.event_name }}" == "push" ]; then
+          TAG="${{ github.ref_name }}"
         else
-          echo "prerelease=false" >> $GITHUB_OUTPUT
+          TAG="${{ github.event.inputs.version }}"
         fi
+        
+        # Validate tag format (must start with 'v')
+        if [[ ! "$TAG" =~ ^v ]]; then
+          echo "::error::Tag must start with 'v'. Received: $TAG"
+          exit 1
+        fi
+        
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Using tag: $TAG"
 
+    # Determine Release Flags (Alpha, Beta, Test, or Stable)
+    - name: Determine Release Flags
+      id: release_flags
+      run: |
+        TAG_NAME="${{ steps.tag_name.outputs.tag }}"
+        TAG_LOWER=$(echo "$TAG_NAME" | tr '[:upper:]' '[:lower:]')
+        
+        IS_PRERELEASE="false"
+        IS_DRAFT="false"
+        
+        if [[ "$TAG_LOWER" == *"alpha"* ]] || [[ "$TAG_LOWER" == *"beta"* ]]; then
+          IS_PRERELEASE="true"
+          IS_DRAFT="false"
+          echo "Detected Alpha/Beta tag: $TAG_NAME -> Pre-release: Yes, Draft: No"
+        elif [[ "$TAG_LOWER" == *"test"* ]]; then
+          IS_PRERELEASE="true"
+          IS_DRAFT="true"
+          echo "Detected Test tag: $TAG_NAME -> Pre-release: Yes, Draft: Yes"
+        else
+          echo "Detected Stable tag: $TAG_NAME -> Pre-release: No, Draft: No"
+        fi
+        
+        echo "prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+        echo "draft=$IS_DRAFT" >> $GITHUB_OUTPUT
+
+    # Create Release
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ steps.bot-token.outputs.token }}
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: ${{ steps.prerelease_check.outputs.prerelease }}
+        tag_name: ${{ steps.tag_name.outputs.tag }}
+        release_name: Release ${{ steps.tag_name.outputs.tag }}
+        draft: ${{ steps.release_flags.outputs.draft }}
+        prerelease: ${{ steps.release_flags.outputs.prerelease }}
 
     # Upload Linux
     - name: Upload Release Asset
