@@ -278,7 +278,6 @@ public sealed class AuthApi
     }
 
     public sealed record AuthenticateRequest(string? Username, Guid? UserId, string Password, string? TfaCode = null);
-    public sealed record AuthenticateResponse(string Token, string Username, Guid UserId, DateTimeOffset ExpireTime);
     public sealed record AuthenticateDenyResponse(string[] Errors, AuthenticateDenyResponseCode Code);
 
     public sealed record RegisterRequest(string Username, string Email, string Password);
