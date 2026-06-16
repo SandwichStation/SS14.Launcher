@@ -28,17 +28,17 @@ public static class ConfigConstants
 
     private static readonly UrlFallbackSetStats StatsHubInfra = new(2);
 
-    public static readonly UrlFallbackSet AuthUrl = new(["https://auth.spacestation14.com/", "https://auth.fallback.spacestation14.com/"], StatsHubInfra);
+    public static readonly UrlFallbackSet AuthUrl = new(["https://auth.playss14.com/", "https://auth.fallback.playss14.com/"], StatsHubInfra);
     public static readonly UrlFallbackSet[] DefaultHubUrls = [new(["https://hub.sandwich14.com/", "https://backuphub.sandwich14.com/"], StatsHubInfra)];
     public const string DiscordUrl = "https://discord.sandwich14.com";
-    public const string AccountBaseUrl = "https://account.spacestation14.com/Identity/Account/";
+    public const string AccountBaseUrl = "https://account.playss14.com/Identity/Account/";
     public const string AccountManagementUrl = $"{AccountBaseUrl}Manage";
     public const string AccountRegisterUrl = $"{AccountBaseUrl}Register";
     public const string AccountResendConfirmationUrl = $"{AccountBaseUrl}ResendEmailConfirmation";
-    public const string WebsiteUrl = "https://spacestation14.com";
-    public const string DownloadUrl = "https://spacestation14.com/about/nightlies/";
-    public const string NewsFeedUrl = "https://spacestation14.com/post/index.xml";
-    public const string TranslateUrl = "https://docs.spacestation14.com/en/general-development/contributing-translations.html";
+    public const string WebsiteUrl = "https://github.com/SandwichStation";
+    public const string DownloadUrl = "https://github.com/SandwichStation/SS14.Launcher/releases/";
+    //public const string NewsFeedUrl = "https://playss14.com/post/index.xml";
+    //public const string TranslateUrl = "https://docs.playss14.com/en/general-development/contributing-translations.html";
 
     private static readonly UrlFallbackSet RobustBuildsBaseUrl = new([
         "https://robust-builds.cdn.spacestation14.com/",
