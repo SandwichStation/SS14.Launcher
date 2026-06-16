@@ -5,7 +5,7 @@ namespace SS14.Launcher;
 
 public static class ConfigConstants
 {
-    public const string CurrentLauncherVersion = "S1";
+    public const string CurrentLauncherVersion = "0.1.0";
     public static readonly bool DoVersionCheck = false;
 
     // Refresh login tokens if they're within <this much> of expiry.
@@ -28,17 +28,17 @@ public static class ConfigConstants
 
     private static readonly UrlFallbackSetStats StatsHubInfra = new(2);
 
-    public static readonly UrlFallbackSet AuthUrl = new(["https://auth.playss14.com/", "https://auth.fallback.playss14.com/"], StatsHubInfra);
+    public static readonly UrlFallbackSet AuthUrl = new(["https://auth.sandwich14.com/", "https://auth.fallback.sandwich14.com/"], StatsHubInfra);
     public static readonly UrlFallbackSet[] DefaultHubUrls = [new(["https://hub.sandwich14.com/", "https://backuphub.sandwich14.com/"], StatsHubInfra)];
     public const string DiscordUrl = "https://discord.sandwich14.com";
-    public const string AccountBaseUrl = "https://account.playss14.com/Identity/Account/";
+    public const string AccountBaseUrl = "https://auth.sandwich14.com/api/launcher/";
     public const string AccountManagementUrl = $"{AccountBaseUrl}Manage";
     public const string AccountRegisterUrl = $"{AccountBaseUrl}Register";
     public const string AccountResendConfirmationUrl = $"{AccountBaseUrl}ResendEmailConfirmation";
     public const string WebsiteUrl = "https://github.com/SandwichStation";
     public const string DownloadUrl = "https://github.com/SandwichStation/SS14.Launcher/releases/";
-    //public const string NewsFeedUrl = "https://playss14.com/post/index.xml";
-    //public const string TranslateUrl = "https://docs.playss14.com/en/general-development/contributing-translations.html";
+    public const string NewsFeedUrl = "https://playss14.com/post/index.xml";
+    public const string TranslateUrl = "https://docs.playss14.com/en/general-development/contributing-translations.html";
 
     private static readonly UrlFallbackSet RobustBuildsBaseUrl = new([
         "https://robust-builds.cdn.spacestation14.com/",

@@ -2,10 +2,12 @@ using System;
 using System.Threading.Tasks;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
+using Serilog;
 using SS14.Launcher.Api;
 using SS14.Launcher.Localization;
 using SS14.Launcher.Models.Data;
 using SS14.Launcher.Models.Logins;
+using SS14.Launcher.ViewModels.Login;
 
 namespace SS14.Launcher.ViewModels.Login;
 
@@ -16,40 +18,79 @@ public class LoginViewModel : BaseLoginViewModel
     private readonly DataManager _dataManager;
     private readonly LocalizationManager _loc = LocalizationManager.Instance;
 
-    [Reactive] public string EditingUsername { get; set; } = "";
-    [Reactive] public string EditingPassword { get; set; } = "";
+    [Reactive] public string VerificationCode { get; set; } = "";
+    [Reactive] public bool IsCodeValid { get; private set; }
 
-    [Reactive] public bool IsInputValid { get; private set; }
-    [Reactive] public bool IsPasswordVisible { get; set; }
+    [Reactive] public string StatusMessage { get; set; } = "";
+    [Reactive] public bool ShowStatusError { get; set; }
 
     public LoginViewModel(MainWindowLoginViewModel parentVm, AuthApi authApi,
         LoginManager loginMgr, DataManager dataManager) : base(parentVm)
     {
-        BusyText = _loc.GetString("login-login-busy-logging-in");
+        BusyText = _loc.GetString("login-linking-busy");
         _authApi = authApi;
         _loginMgr = loginMgr;
         _dataManager = dataManager;
 
-        this.WhenAnyValue(x => x.EditingUsername, x => x.EditingPassword)
-            .Subscribe(s => { IsInputValid = !string.IsNullOrEmpty(s.Item1) && !string.IsNullOrEmpty(s.Item2); });
+        this.WhenAnyValue(x => x.VerificationCode)
+            .Subscribe(s =>
+            {
+                IsCodeValid = !string.IsNullOrWhiteSpace(s) && s.Length >= 4;
+            });
     }
 
-    public async void OnLogInButtonPressed()
+    public async void OnLinkButtonPressed()
     {
-        if (!IsInputValid || Busy)
+        if (!IsCodeValid || Busy)
         {
             return;
         }
 
         Busy = true;
+        ShowStatusError = false;
+        StatusMessage = _loc.GetString("login-status-exchanging-token");
+
         try
         {
-            var request = new AuthApi.AuthenticateRequest(EditingUsername, EditingPassword);
-            var resp = await _authApi.AuthenticateAsync(request);
+            var resp = await _authApi.GetLauncherTokenAsync(VerificationCode);
 
-            await DoLogin(this, request, resp, _loginMgr, _authApi);
+            if (resp.IsSuccess)
+            {
+                var loginInfo = resp.LoginInfo;
 
-            _dataManager.CommitConfig();
+                // Check if we already have this login
+                var existing = _loginMgr.Logins.Lookup(loginInfo.UserId);
+                if (existing.HasValue)
+                {
+                    // Update existing
+                    await _authApi.LogoutTokenAsync(existing.Value.LoginInfo.Token.Token);
+                    _loginMgr.UpdateToNewToken(_loginMgr.ActiveAccount!, loginInfo.Token);
+                }
+                else
+                {
+                    _loginMgr.AddFreshLogin(loginInfo);
+                }
+
+                _loginMgr.ActiveAccountId = loginInfo.UserId;
+                _dataManager.CommitConfig();
+
+                StatusMessage = _loc.GetString("login-status-success");
+                ShowStatusError = false;
+
+                ParentVM.SwitchToMain();
+            }
+            else
+            {
+                ShowStatusError = true;
+                StatusMessage = string.Join("\n", resp.Errors);
+                Log.Error("Login failed: {Errors}", resp.Errors);
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error(e, "Unexpected error during token exchange");
+            ShowStatusError = true;
+            StatusMessage = _loc.GetString("login-error-network");
         }
         finally
         {
@@ -57,59 +98,50 @@ public class LoginViewModel : BaseLoginViewModel
         }
     }
 
-    public static async Task<bool> DoLogin<T>(
-        T vm,
-        AuthApi.AuthenticateRequest request,
-        AuthenticateResult resp,
-        LoginManager loginMgr,
-        AuthApi authApi)
-        where T : BaseLoginViewModel, IErrorOverlayOwner
+    public void OpenWebLinker()
     {
-        var loc = LocalizationManager.Instance;
-        if (resp.IsSuccess)
-        {
-            var loginInfo = resp.LoginInfo;
-            var oldLogin = loginMgr.Logins.Lookup(loginInfo.UserId);
-            if (oldLogin.HasValue)
-            {
-                // Already had this login, apparently.
-                // Thanks user.
-                //
-                // Log the OLD token out since we don't need two of them.
-                // This also has the upside of re-available-ing the account
-                // if the user used the main login prompt on an account we already had, but as expired.
+        // Open the web dashboard where users link their SS14 and Discord accounts
+        Helpers.OpenUri(ConfigConstants.AccountManagementUrl);
 
-                await authApi.LogoutTokenAsync(oldLogin.Value.LoginInfo.Token.Token);
-                loginMgr.ActiveAccountId = loginInfo.UserId;
-                loginMgr.UpdateToNewToken(loginMgr.ActiveAccount!, loginInfo.Token);
-                return true;
-            }
+        StatusMessage = _loc.GetString("login-status-web-opened");
+    }
+
+    public void OnLogInButtonPressed()
+    {
+        // In the new unified auth flow, pressing Enter in the login view 
+        // should trigger the link button (verification code exchange)
+        OnLinkButtonPressed();
+    }
+
+    public static async Task DoLogin(BaseLoginViewModel sourceVm, AuthApi.AuthenticateRequest request, 
+        AuthApi.AuthenticateResult authResult, LoginManager loginMgr, AuthApi authApi)
+    {
+        if (!authResult.IsSuccess)
+        {
+            var errors = authResult.Errors;
+            sourceVm.OverlayControl = new AuthErrorsOverlayViewModel(sourceVm, "Login failed", errors);
+            return;
+        }
+
+        var loginInfo = authResult.LoginInfo;
+
+        var existing = loginMgr.Logins.Lookup(loginInfo.UserId);
+        if (existing.HasValue)
+        {
+            await authApi.LogoutTokenAsync(existing.Value.LoginInfo.Token.Token);
+            loginMgr.UpdateToNewToken(loginMgr.ActiveAccount!, loginInfo.Token);
+        }
+        else
+        {
 
             loginMgr.AddFreshLogin(loginInfo);
-            loginMgr.ActiveAccountId = loginInfo.UserId;
-            return true;
         }
 
-        if (resp.Code == AuthApi.AuthenticateDenyResponseCode.TfaRequired)
-        {
-            vm.ParentVM.SwitchToAuthTfa(request);
-            return false;
-        }
+        loginMgr.ActiveAccountId = loginInfo.UserId;
 
-        var errors = AuthErrorsOverlayViewModel.AuthCodeToErrors(resp.Errors, resp.Code);
-        vm.OverlayControl = new AuthErrorsOverlayViewModel(vm, loc.GetString("login-login-error-title"), errors);
-        return false;
+
+        sourceVm.ParentVM.SwitchToMain();
     }
 
-    public void RegisterPressed()
-    {
-        // Registration is purely via website now, sorry.
-        Helpers.OpenUri(ConfigConstants.AccountRegisterUrl);
-    }
 
-    public void ResendConfirmationPressed()
-    {
-        // Registration is purely via website now, sorry.
-        Helpers.OpenUri(ConfigConstants.AccountResendConfirmationUrl);
-    }
 }

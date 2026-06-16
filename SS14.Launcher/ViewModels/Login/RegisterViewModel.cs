@@ -110,11 +110,11 @@ public class RegisterViewModel : BaseLoginViewModel
             }
 
             var status = result.Status;
-            if (status == RegisterResponseStatus.Registered)
+            if (status == AuthApi.RegisterResponseStatus.Registered)
             {
                 BusyText = "Logging in...";
                 // No confirmation needed, log in immediately.
-                var request = new AuthApi.AuthenticateRequest(EditingUsername, EditingPassword);
+                var request = new AuthApi.AuthenticateRequest(EditingUsername, null, EditingPassword);
                 var resp = await _authApi.AuthenticateAsync(request);
 
                 await LoginViewModel.DoLogin(this, request, resp, _loginMgr, _authApi);
@@ -123,7 +123,7 @@ public class RegisterViewModel : BaseLoginViewModel
             }
             else
             {
-                Debug.Assert(status == RegisterResponseStatus.RegisteredNeedConfirmation);
+                Debug.Assert(status == AuthApi.RegisterResponseStatus.RegisteredNeedConfirmation);
 
                 ParentVM.SwitchToRegisterNeedsConfirmation(EditingUsername, EditingPassword);
             }
