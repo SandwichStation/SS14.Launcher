@@ -5,7 +5,7 @@ namespace SS14.Launcher;
 
 public static class ConfigConstants
 {
-    public const string CurrentLauncherVersion = "0.1.0";
+    public const string CurrentLauncherVersion = "0.1.1";
     public static readonly bool DoVersionCheck = false;
 
     // Refresh login tokens if they're within <this much> of expiry.
