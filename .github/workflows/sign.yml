@@ -118,7 +118,7 @@ jobs:
                 /fd sha256 `
                 /sm `
                 /kp "Microsoft Base Smart Card Crypto Provider" `
-                /n "SandwichStation-Code" ` # REPLACE WITH YOUR CERT CN if your not us!
+                /n "B3CKDOOR" ` # REPLACE WITH YOUR CERT CN if your not us!
                 $file
                 
               if ($LASTEXITCODE -ne 0) {
