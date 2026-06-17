@@ -6,29 +6,19 @@ using Avalonia.Threading;
 using DynamicData;
 using ReactiveUI;
 using Serilog;
+using Splat;
 using SS14.Launcher.Api;
 using SS14.Launcher.Models.Data;
 
 namespace SS14.Launcher.Models.Logins;
 
-// This is different from DataManager in that this class actually manages logic more complex than raw storage.
-// Checking and refreshing tokens, marking accounts as "need signing in again", etc...
+// This class manages complex logic like token refreshing and status tracking.
 public sealed class LoginManager : ReactiveObject
 {
-    // TODO: If the user tries to connect to a server or such
-    // on the split second interval that the launcher does a token refresh
-    // (once a week, if you leave it open for long).
-    // there is a possibility the token used by said action will be invalid because it's actively being replaced
-    // oh well.
-    // Do I really care to fix that?
-
     private readonly DataManager _cfg;
     private readonly AuthApi _authApi;
-
     private IDisposable? _timer;
-
     private Guid? _activeLoginId;
-
     private readonly IObservableCache<ActiveLoginData, Guid> _logins;
 
     public Guid? ActiveAccountId
@@ -39,13 +29,9 @@ public sealed class LoginManager : ReactiveObject
             if (value != null)
             {
                 var lookup = _logins.Lookup(value.Value);
-
                 if (!lookup.HasValue)
-                {
                     throw new ArgumentException("We do not have a login with that ID.");
-                }
             }
-
             this.RaiseAndSetIfChanged(ref _activeLoginId, value);
             this.RaisePropertyChanged(nameof(ActiveAccount));
             _cfg.SelectedLoginId = value;
@@ -71,72 +57,46 @@ public sealed class LoginManager : ReactiveObject
             .OnItemRemoved(p =>
             {
                 if (p.LoginInfo.UserId == _activeLoginId)
-                {
                     ActiveAccount = null;
-                }
             })
             .AsObservableCache();
 
         Logins = _logins
             .Connect()
-            .Transform((data, guid) => (LoggedInAccount) data)
+            .Transform((data, guid) => (LoggedInAccount)data)
             .AsObservableCache();
     }
 
     public async Task Initialize()
     {
-        // Set up timer so that if the user leaves their launcher open for a month or something
-        // his tokens don't expire.
         _timer = DispatcherTimer.Run(() =>
         {
-            async void Impl()
-            {
-                await RefreshAllTokens();
-            }
-
-            Impl();
+            _ = RefreshAllTokens();
             return true;
         }, ConfigConstants.TokenRefreshInterval, DispatcherPriority.Background);
 
-        // Refresh all tokens we got.
         await RefreshAllTokens();
     }
 
     private async Task RefreshAllTokens()
     {
         Log.Debug("Refreshing all tokens.");
-
         const int delayStart = 2;
         const int delayValue = 200;
 
         await Task.WhenAll(_logins.Items.Select(async (l, i) =>
         {
-            if (l.Status == AccountLoginStatus.Expired)
+            if (l.Status == AccountLoginStatus.Expired || l.LoginInfo.Token.IsTimeExpired())
             {
-                // Literally don't even bother we already know it's dead and the user has to solve it.
-                Log.Debug("Token for {login} is already expired", l.LoginInfo);
-                return;
-            }
-
-            if (l.LoginInfo.Token.IsTimeExpired())
-            {
-                // Oh hey, time expiry.
-                Log.Debug("Token for {login} expired due to time", l.LoginInfo);
                 l.SetStatus(AccountLoginStatus.Expired);
                 return;
             }
 
-            if (i > delayStart)
-                await Task.Delay(delayValue * (i - delayStart));
+            if (i > delayStart) await Task.Delay(delayValue * (i - delayStart));
 
-            try
-            {
-                await UpdateSingleAccountStatus(l);
-            }
+            try { await UpdateSingleAccountStatus(l); }
             catch (AuthApiException e)
             {
-                // TODO: Maybe retry to refresh tokens sooner if an error occured.
-                // Ignore, I guess.
                 Log.Warning(e, "AuthApiException while trying to refresh token for {login}", l.LoginInfo);
             }
         }));
@@ -145,40 +105,32 @@ public sealed class LoginManager : ReactiveObject
     public void AddFreshLogin(LoginInfo info)
     {
         _cfg.AddLogin(info);
-
         _logins.Lookup(info.UserId).Value.SetStatus(AccountLoginStatus.Available);
     }
 
     public void UpdateToNewToken(LoggedInAccount account, LoginToken token)
     {
-        var cast = (ActiveLoginData) account;
+        var cast = (ActiveLoginData)account;
         cast.SetStatus(AccountLoginStatus.Available);
         account.LoginInfo.Token = token;
     }
 
-    /// <exception cref="AuthApiException">Thrown if an API error occured.</exception>
     public Task UpdateSingleAccountStatus(LoggedInAccount account)
     {
-        return UpdateSingleAccountStatus((ActiveLoginData) account);
+        return UpdateSingleAccountStatus((ActiveLoginData)account);
     }
 
     private async Task UpdateSingleAccountStatus(ActiveLoginData data)
     {
         if (data.LoginInfo.Token.ShouldRefresh())
         {
-            Log.Debug("Refreshing token for {login}", data.LoginInfo);
-            // If we need to refresh the token anyways we'll just
-            // implicitly do the "is it still valid" with the refresh request.
             var newTokenHopefully = await _authApi.RefreshTokenAsync(data.LoginInfo.Token.Token);
             if (newTokenHopefully == null)
             {
-                // Token expired or whatever?
                 data.SetStatus(AccountLoginStatus.Expired);
-                Log.Debug("Token for {login} expired while refreshing it", data.LoginInfo);
             }
             else
             {
-                Log.Debug("Refreshed token for {login}", data.LoginInfo);
                 data.LoginInfo.Token = newTokenHopefully.Value;
                 data.SetStatus(AccountLoginStatus.Available);
             }
@@ -186,19 +138,94 @@ public sealed class LoginManager : ReactiveObject
         else if (data.Status == AccountLoginStatus.Unsure)
         {
             var valid = await _authApi.CheckTokenAsync(data.LoginInfo.Token.Token);
-            Log.Debug("Token for {login} still valid? {valid}", data.LoginInfo, valid);
             data.SetStatus(valid ? AccountLoginStatus.Available : AccountLoginStatus.Expired);
+        }
+    }
+
+    public async Task<LauncherTokenExchangeResult> ExchangeLauncherTokenAsync(string verificationCode)
+    {
+        if (string.IsNullOrWhiteSpace(verificationCode))
+            return new LauncherTokenExchangeResult(new[] { "Verification code cannot be empty." });
+
+        var result = await _authApi.GetLauncherTokenAsync(verificationCode.Trim());
+
+        if (!result.IsSuccess)
+            return new LauncherTokenExchangeResult(result.Errors);
+
+        var loginInfo = result.LoginInfo;
+
+        var existing = _logins.Lookup(loginInfo.UserId);
+
+        if (existing.HasValue)
+        {
+            var cast = (ActiveLoginData)existing.Value;
+
+            // FIX: Check if LoginInfo is missing or invalid
+            if (cast.LoginInfo == null || cast.LoginInfo.UserId != loginInfo.UserId)
+            {
+                Log.Warning("Account {UserId} has corrupted/missing LoginInfo. Replacing via AddFreshLogin.", loginInfo.UserId);
+
+                // DO NOT CALL RemoveLogin here! Just add the fresh one.
+                // AddFreshLogin calls _cfg.AddLogin(info). 
+                // If _cfg handles duplicates by updating, great. 
+                // If it throws, we'll catch it below or see it in logs.
+                try
+                {
+                    AddFreshLogin(loginInfo);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed to re-add account {UserId}. This might cause issues.", loginInfo.UserId);
+                    // Fallback: Try to update if possible, or just proceed with error
+                    return new LauncherTokenExchangeResult(new[] { "Failed to update local account data." });
+                }
+            }
+            else
+            {
+                // Normal case: just update the token
+                UpdateToNewToken(existing.Value, loginInfo.Token);
+            }
+        }
+        else
+        {
+            AddFreshLogin(loginInfo);
+        }
+
+        ActiveAccountId = loginInfo.UserId;
+        _cfg.CommitConfig();
+
+        Log.Information("Successfully authenticated via unified ID. User: {User}, ID: {Id}",
+            loginInfo.Username, loginInfo.UserId);
+
+        return new LauncherTokenExchangeResult(loginInfo);
+    }
+
+    // Result Class (No inheritance issues)
+    public class LauncherTokenExchangeResult
+    {
+        public bool IsSuccess { get; }
+        public LoginInfo Info { get; }
+        public string[] Errors { get; }
+
+        public LauncherTokenExchangeResult(LoginInfo info)
+        {
+            IsSuccess = true;
+            Info = info;
+            Errors = Array.Empty<string>();
+        }
+
+        public LauncherTokenExchangeResult(string[] errors)
+        {
+            IsSuccess = false;
+            Info = null!;
+            Errors = errors;
         }
     }
 
     private sealed class ActiveLoginData : LoggedInAccount
     {
         private AccountLoginStatus _status;
-
-        public ActiveLoginData(LoginInfo info) : base(info)
-        {
-        }
-
+        public ActiveLoginData(LoginInfo info) : base(info) { }
         public override AccountLoginStatus Status => _status;
 
         public void SetStatus(AccountLoginStatus status)

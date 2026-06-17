@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
@@ -6,7 +6,7 @@ namespace SS14.Launcher.Api;
 
 public static class ServerApi
 {
-    // https://docs.spacestation14.io/en/engine/http-api
+    // https://docs.sandwich14.com/en/engine/http-api
     public sealed record ServerStatus(
         [property: JsonPropertyName("name")] string? Name,
         [property: JsonPropertyName("players")]

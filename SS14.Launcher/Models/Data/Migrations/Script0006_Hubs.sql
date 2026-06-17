@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS Hub (
 );
 
 INSERT INTO Hub (Address, Priority)
-SELECT 'https://hub.spacestation14.com', 0
+SELECT 'https://hub.playss14.com', 0
 WHERE NOT EXISTS (
-    SELECT 1 FROM Hub WHERE Address = 'https://hub.spacestation14.com'
+    SELECT 1 FROM Hub WHERE Address = 'https://hub.playss14.com'
 );

@@ -384,3 +384,12 @@ language-selector-language = { $languageName } ({ $englishName })
 
 # Generic "Done!" message used for some buttons.
 button-done = Done!
+
+## Unified ID Login Screen
+
+login-linking-busy = Exchanging verification code…
+login-status-exchanging-token = Exchanging verification code for authentication token…
+login-status-success = Successfully logged in! Switching to main window…
+login-status-web-opened = Web dashboard opened in your default browser. Link your accounts and enter the verification code here.
+login-error-network = Network error occurred. Please check your connection and try again.
+

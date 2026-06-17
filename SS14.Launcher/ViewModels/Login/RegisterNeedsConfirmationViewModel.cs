@@ -81,7 +81,7 @@ public class RegisterNeedsConfirmationViewModel : BaseLoginViewModel
 
         try
         {
-            var request = new AuthApi.AuthenticateRequest(_loginUsername, _loginPassword);
+            var request = new AuthApi.AuthenticateRequest(_loginUsername, null, _loginPassword);
             var resp = await _authApi.AuthenticateAsync(request);
 
             await LoginViewModel.DoLogin(this, request, resp, _loginMgr, _authApi);

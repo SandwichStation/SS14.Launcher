@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -26,12 +26,12 @@ internal static class HttpSelfTest
 
     private static readonly string[] SelfTestUrls =
     {
-        "http://central.spacestation14.io/launcher_version.txt",
-        "https://central.spacestation14.io/launcher_version.txt",
-        "http://cdn.centcomm.spacestation14.com/launcher_version.txt",
-        "https://cdn.centcomm.spacestation14.com/launcher_version.txt",
-        "http://moon.spacestation14.com/replays/",
-        "https://moon.spacestation14.com/replays/"
+        "http://central.sandwich14.com/launcher_version.txt",
+        "https://central.sandwich14.com/launcher_version.txt",
+        "http://cdn.centcomm.playss14.com/launcher_version.txt",
+        "https://cdn.centcomm.playss14.com/launcher_version.txt",
+        "http://moon.playss14.com/replays/",
+        "https://moon.playss14.com/replays/"
     };
 
     public static void StartSelfTest()

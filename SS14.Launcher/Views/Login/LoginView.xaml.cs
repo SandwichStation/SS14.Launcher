@@ -11,8 +11,7 @@ public partial class LoginView : UserControl
     {
         InitializeComponent();
 
-        NameBox.KeyDown += InputBoxOnKeyDown;
-        PasswordBox.KeyDown += InputBoxOnKeyDown;
+        CodeBox.KeyDown += InputBoxOnKeyDown;
     }
 
     private void InputBoxOnKeyDown(object? sender, KeyEventArgs args)

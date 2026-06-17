@@ -73,6 +73,9 @@ public class MainWindowLoginViewModel : ViewModelBase
         Screen = new RegisterNeedsConfirmationViewModel(this, _authApi, username, password, _loginMgr, _cfg);
     }
 
+    public void SwitchToMain()
+    {}
+
     public void OpenLogDirectory()
     {
         Process.Start(new ProcessStartInfo
