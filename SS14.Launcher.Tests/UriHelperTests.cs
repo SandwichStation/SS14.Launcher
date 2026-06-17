@@ -8,10 +8,10 @@ namespace SS14.Launcher.Tests;
 public class UriHelperTests
 {
     [Test]
-    [TestCase("server.spacestation14.io", "http://server.spacestation14.io:1212/status")]
-    [TestCase("ss14s://server.spacestation14.io", "https://server.spacestation14.io/status")]
-    [TestCase("ss14s://server.spacestation14.io:1212", "https://server.spacestation14.io:1212/status")]
-    [TestCase("ss14s://server.spacestation14.io/foo", "https://server.spacestation14.io/foo/status")]
+    [TestCase("server.sandwich14.com", "http://server.sandwich14.com:1212/status")]
+    [TestCase("ss14s://server.sandwich14.com", "https://server.sandwich14.com/status")]
+    [TestCase("ss14s://server.sandwich14.com:1212", "https://server.sandwich14.com:1212/status")]
+    [TestCase("ss14s://server.sandwich14.com/foo", "https://server.sandwich14.com/foo/status")]
     public void GetServerStatusAddress(string input, string expected)
     {
         var uri = UriHelper.GetServerStatusAddress(input);
