@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -243,7 +243,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IErrorOverlayOwner
 
             case AccountLoginStatus.Expired:
                 _loginMgr.ActiveAccount = null;
-                LoginViewModel.SwitchToExpiredLogin(account);
+                //LoginViewModel.SwitchToExpiredLogin(account); No longer used for now due to new login system
+                LoginViewModel.SwitchToLogin();
                 break;
         }
     }
