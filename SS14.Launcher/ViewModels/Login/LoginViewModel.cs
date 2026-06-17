@@ -62,9 +62,8 @@ public class LoginViewModel : BaseLoginViewModel
                 var existing = _loginMgr.Logins.Lookup(loginInfo.UserId);
                 if (existing.HasValue)
                 {
-                    // Update existing
                     await _authApi.LogoutTokenAsync(existing.Value.LoginInfo.Token.Token);
-                    _loginMgr.UpdateToNewToken(_loginMgr.ActiveAccount!, loginInfo.Token);
+                    _loginMgr.UpdateToNewToken(existing.Value, loginInfo.Token);  // Use the actual looked-up account
                 }
                 else
                 {
@@ -129,7 +128,7 @@ public class LoginViewModel : BaseLoginViewModel
         if (existing.HasValue)
         {
             await authApi.LogoutTokenAsync(existing.Value.LoginInfo.Token.Token);
-            loginMgr.UpdateToNewToken(loginMgr.ActiveAccount!, loginInfo.Token);
+            loginMgr.UpdateToNewToken(existing.Value, loginInfo.Token);
         }
         else
         {

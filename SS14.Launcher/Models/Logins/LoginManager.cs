@@ -155,10 +155,41 @@ public sealed class LoginManager : ReactiveObject
         var loginInfo = result.LoginInfo;
 
         var existing = _logins.Lookup(loginInfo.UserId);
+
         if (existing.HasValue)
-            UpdateToNewToken(existing.Value, loginInfo.Token);
+        {
+            var cast = (ActiveLoginData)existing.Value;
+
+            // FIX: Check if LoginInfo is missing or invalid
+            if (cast.LoginInfo == null || cast.LoginInfo.UserId != loginInfo.UserId)
+            {
+                Log.Warning("Account {UserId} has corrupted/missing LoginInfo. Replacing via AddFreshLogin.", loginInfo.UserId);
+
+                // DO NOT CALL RemoveLogin here! Just add the fresh one.
+                // AddFreshLogin calls _cfg.AddLogin(info). 
+                // If _cfg handles duplicates by updating, great. 
+                // If it throws, we'll catch it below or see it in logs.
+                try
+                {
+                    AddFreshLogin(loginInfo);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed to re-add account {UserId}. This might cause issues.", loginInfo.UserId);
+                    // Fallback: Try to update if possible, or just proceed with error
+                    return new LauncherTokenExchangeResult(new[] { "Failed to update local account data." });
+                }
+            }
+            else
+            {
+                // Normal case: just update the token
+                UpdateToNewToken(existing.Value, loginInfo.Token);
+            }
+        }
         else
+        {
             AddFreshLogin(loginInfo);
+        }
 
         ActiveAccountId = loginInfo.UserId;
         _cfg.CommitConfig();
