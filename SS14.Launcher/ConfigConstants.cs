@@ -5,7 +5,8 @@ namespace SS14.Launcher;
 
 public static class ConfigConstants
 {
-    public const string CurrentLauncherVersion = "0.1.1";
+    public const string CurrentLauncherVersion = "0.1.3";
+    public const string LauncherName = "sandwich-station-launcher";
     public static readonly bool DoVersionCheck = false;
 
     // Refresh login tokens if they're within <this much> of expiry.
@@ -37,8 +38,10 @@ public static class ConfigConstants
     public const string AccountResendConfirmationUrl = $"{AccountBaseUrl}ResendEmailConfirmation";
     public const string WebsiteUrl = "https://github.com/SandwichStation";
     public const string DownloadUrl = "https://github.com/SandwichStation/SS14.Launcher/releases/";
-    public const string NewsFeedUrl = "https://playss14.com/post/index.xml";
-    public const string TranslateUrl = "https://docs.playss14.com/en/general-development/contributing-translations.html";
+    //public const string NewsFeedUrl = "https://playss14.com/post/index.xml";
+    public const string NewsFeedUrl = "";
+    //public const string TranslateUrl = "https://docs.playss14.com/en/general-development/contributing-translations.html";
+    public const string TranslateUrl = "";
 
     private static readonly UrlFallbackSet RobustBuildsBaseUrl = new([
         "https://robust-builds.cdn.spacestation14.com/",
