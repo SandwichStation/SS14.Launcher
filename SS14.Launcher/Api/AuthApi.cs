@@ -20,6 +20,36 @@ public sealed class AuthApi
         _httpClient = http;
     }
 
+    /// <summary>
+    /// Sets launcher identification headers on the HttpClient.
+    /// When DoVersionCheck is true, sends version info so the server can enforce it.
+    /// When DoVersionCheck is false, sends ONLY the name (no version) so the server
+    /// treats us as an "unknown launcher" and allows through without version gating.
+    /// </summary>
+    private void SetLauncherHeaders()
+    {
+        // Always clean up stale headers first
+        _httpClient.DefaultRequestHeaders.Remove("X-Launcher-Version");
+        _httpClient.DefaultRequestHeaders.Remove("X-Launcher-Name");
+
+        // Always send the launcher name for server-side logging
+        _httpClient.DefaultRequestHeaders.Add("X-Launcher-Name", ConfigConstants.LauncherName);
+
+        if (ConfigConstants.DoVersionCheck)
+        {
+            // Version check enabled → send version so server can enforce it
+            var version = ConfigConstants.CurrentLauncherVersion;
+            _httpClient.DefaultRequestHeaders.Add("X-Launcher-Version", version);
+            Log.Debug("Launcher headers set: Name={Name}, Version={Ver} (enforced)", ConfigConstants.LauncherName, version);
+        }
+        else
+        {
+            // Version check disabled → NO version header sent
+            // Server will treat this as "unknown launcher" and allow through
+            Log.Debug("Launcher headers set: Name={Name}, Version=NOT SENT (check disabled)", ConfigConstants.LauncherName);
+        }
+    }
+
     public async Task<AuthenticateResult> AuthenticateAsync(AuthenticateRequest request)
     {
         try
@@ -41,7 +71,6 @@ public sealed class AuthApi
 
             if (resp.StatusCode == HttpStatusCode.Unauthorized)
             {
-                // Login failure.
                 var respJson = await resp.Content.AsJson<AuthenticateDenyResponse>();
                 return new AuthenticateResult(respJson.Errors, respJson.Code);
             }
@@ -77,7 +106,6 @@ public sealed class AuthApi
 
             if (resp.StatusCode == HttpStatusCode.UnprocessableEntity)
             {
-                // Register failure.
                 var respJson = await resp.Content.AsJson<RegisterResponseError>();
                 return new RegisterResult(respJson.Errors);
             }
@@ -127,6 +155,8 @@ public sealed class AuthApi
     {
         try
         {
+            SetLauncherHeaders();
+
             var request = new RefreshRequest(token);
             var authUrl = ConfigConstants.AuthUrl + "api/auth/refresh";
 
@@ -173,6 +203,8 @@ public sealed class AuthApi
     {
         try
         {
+            SetLauncherHeaders();
+
             var authUrl = ConfigConstants.AuthUrl.GetMostSuccessfulUrl() + "api/auth/ping";
             var request = new HttpRequestMessage(HttpMethod.Get, authUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("SS14Auth", token);
@@ -202,19 +234,40 @@ public sealed class AuthApi
     {
         try
         {
-            var request = new { code = verificationCode };
+            SetLauncherHeaders();
+
+            // Build request body — include version ONLY if version check is enabled
+            object requestBody;
+
+            if (ConfigConstants.DoVersionCheck)
+            {
+                requestBody = new
+                {
+                    code = verificationCode,
+                    launcher = ConfigConstants.LauncherName,
+                    version = ConfigConstants.CurrentLauncherVersion
+                };
+            }
+            else
+            {
+                // No version in body → server treats as unknown launcher → allowed
+                requestBody = new
+                {
+                    code = verificationCode,
+                    launcher = ConfigConstants.LauncherName
+                };
+            }
+
             var authUrl = ConfigConstants.AuthUrl + "api/launcher/authenticate-with-code";
 
-            using var resp = await _httpClient.PostAsJsonAsync(authUrl, request);
+            using var resp = await _httpClient.PostAsJsonAsync(authUrl, requestBody);
 
             if (resp.IsSuccessStatusCode)
             {
                 var respJson = await resp.Content.AsJson<LauncherTokenResponse>();
 
-                // Log the raw response for debugging
                 Log.Information("GetLauncherTokenAsync success response: {@Response}", respJson);
 
-                // Validate response data before using - log what we got for debugging
                 if (string.IsNullOrEmpty(respJson?.UserId))
                 {
                     Log.Warning("Server response missing UserId. Response: {@Response}", respJson);
@@ -242,6 +295,16 @@ public sealed class AuthApi
                 });
             }
 
+            // --- Handle 426: Launcher Out of Date ---
+            if ((int)resp.StatusCode == 426)
+            {
+                var respJson = await resp.Content.AsJson<ErrorResponse>();
+                string errorMsg = respJson?.Error ?? "Your launcher is out of date.";
+
+                Log.Warning("Server rejected launcher version: {Error}", errorMsg);
+                return new LauncherTokenResult(new[] { errorMsg });
+            }
+
             if (resp.StatusCode == HttpStatusCode.Forbidden)
             {
                 return new LauncherTokenResult(new[] { "Accounts linked but not unified." });
@@ -250,7 +313,14 @@ public sealed class AuthApi
             if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.BadRequest)
             {
                 var respJson = await resp.Content.AsJson<ErrorResponse>();
-                return new LauncherTokenResult(new[] { respJson?.Error ?? "Invalid or expired code." });
+
+                if (respJson != null && !string.IsNullOrEmpty(respJson.Error))
+                {
+                    Log.Warning("Launcher auth failed: {Error}", respJson.Error);
+                    return new LauncherTokenResult(new[] { respJson.Error });
+                }
+
+                return new LauncherTokenResult(new[] { "Invalid or expired code." });
             }
 
             Log.Error("Server returned unexpected status: {Status}", resp.StatusCode);
