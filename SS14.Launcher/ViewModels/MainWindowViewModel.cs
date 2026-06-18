@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Reactive.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using Avalonia.Platform.Storage;
 using DynamicData;
 using ReactiveUI;
@@ -43,6 +44,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IErrorOverlayOwner
     public NewsTabViewModel NewsTab { get; }
     public OptionsTabViewModel OptionsTab { get; }
 
+    public ICommand PlayDoomCommand { get; }
     public MainWindowViewModel()
     {
         _cfg = Locator.Current.GetRequiredService<DataManager>();
@@ -95,6 +97,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IErrorOverlayOwner
                     LoginViewModel.SwitchToLogin();
                 }
             });
+        PlayDoomCommand = ReactiveCommand.Create(LaunchDoom);
     }
 
     public MainWindow? Control { get; set; }
@@ -328,5 +331,85 @@ public sealed class MainWindowViewModel : ViewModelBase, IErrorOverlayOwner
         var processor = LauncherDiagnostics.GetProcessorModel();
 
         return processor.Contains("VirtualApple") && !cfg.GetCVar(CVars.HasDismissedRosettaWarning);
+    }
+
+    // --- ADDED: Launch DOOM Method ---
+    private void LaunchDoom()
+    {
+        try
+        {
+            var baseDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
+
+            if (baseDir == null)
+            {
+                Log.Warning("Could not determine executable path for DOOM launch.");
+                return;
+            }
+
+            // Path to the doom assets relative to the launcher's root
+            var doomDir = Path.Combine(baseDir, "Assets", "doom");
+            var exePath = Path.Combine(doomDir, "chocolate-doom.exe");
+            var wadPath = Path.Combine(doomDir, "freedoom2.wad");
+
+            // Validate files exist
+            if (!File.Exists(exePath))
+            {
+                Log.Warning($"Chocolate Doom executable not found: {exePath}");
+                return;
+            }
+
+            if (!File.Exists(wadPath))
+            {
+                Log.Warning($"Freedoom WAD not found: {wadPath}");
+                return;
+            }
+
+            // Create config dynamically to suppress the ENDOOM splash screen
+            var configPath = Path.Combine(doomDir, "chocolate-doom.cfg");
+            string configContent = "show_endoom 0\n";
+
+            bool needsUpdate = false;
+            if (!File.Exists(configPath))
+            {
+                needsUpdate = true;
+            }
+            else
+            {
+                string existingConfig = File.ReadAllText(configPath);
+                if (!existingConfig.Contains("show_endoom"))
+                {
+                    needsUpdate = true;
+                }
+            }
+
+            if (needsUpdate)
+            {
+                try
+                {
+                    File.WriteAllText(configPath, configContent);
+                    Log.Debug("Created DOOM config to suppress end screen.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to create DOOM config file. End screen might appear.");
+                }
+            }
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = $"-iwad \"{wadPath}\"",
+                WorkingDirectory = doomDir,
+                UseShellExecute = false
+            };
+
+            using var proc = Process.Start(startInfo);
+            Log.Information("Launched Chocolate Doom!");
+
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error launching DOOM");
+        }
     }
 }
