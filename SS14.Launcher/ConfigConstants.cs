@@ -7,7 +7,7 @@ public static class ConfigConstants
 {
     public const string CurrentLauncherVersion = "0.1.3";
     public const string LauncherName = "sandwich-station-launcher";
-    public static readonly bool DoVersionCheck = false;
+    public static readonly bool DoVersionCheck = true;
 
     // Refresh login tokens if they're within <this much> of expiry.
     public static readonly TimeSpan TokenRefreshThreshold = TimeSpan.FromDays(15);
