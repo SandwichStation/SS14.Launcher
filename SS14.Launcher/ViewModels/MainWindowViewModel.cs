@@ -157,7 +157,34 @@ public sealed class MainWindowViewModel : ViewModelBase, IErrorOverlayOwner
             TrySwitchToAccount(login);
         }
 
-        // We should now start reacting to commands.
+        // --- Process deep link auth code from ss14-auth:// URI ---
+        if (!string.IsNullOrEmpty(Program.PendingAuthCode))
+        {
+            var code = Program.ConsumeAuthCode();
+
+            BusyTask = "Logging in via unified ID...";
+            try
+            {
+                Log.Information("Processing deep link auth code...");
+                var result = await _loginMgr.ExchangeLauncherTokenAsync(code);
+                if (result.IsSuccess)
+                {
+                    Log.Information("Deep link login succeeded for user {User}", result.Info.Username);
+                }
+                else
+                {
+                    Log.Warning("Deep link auth failed: {Errors}", string.Join(", ", result.Errors));
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Exception processing deep link auth code");
+            }
+            finally
+            {
+                BusyTask = null;
+            }
+        }
     }
 
     private async Task CheckAccounts()
