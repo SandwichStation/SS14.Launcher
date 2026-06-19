@@ -5,7 +5,7 @@ namespace SS14.Launcher;
 
 public static class ConfigConstants
 {
-    public const string CurrentLauncherVersion = "0.1.3";
+    public const string CurrentLauncherVersion = "0.1.4";
     public const string LauncherName = "sandwich-station-launcher";
     public static readonly bool DoVersionCheck = true;
 

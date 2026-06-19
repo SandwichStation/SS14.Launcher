@@ -86,12 +86,6 @@ public sealed class LoginManager : ReactiveObject
 
         await Task.WhenAll(_logins.Items.Select(async (l, i) =>
         {
-            if (l.Status == AccountLoginStatus.Expired || l.LoginInfo.Token.IsTimeExpired())
-            {
-                l.SetStatus(AccountLoginStatus.Expired);
-                return;
-            }
-
             if (i > delayStart) await Task.Delay(delayValue * (i - delayStart));
 
             try { await UpdateSingleAccountStatus(l); }
@@ -112,7 +106,17 @@ public sealed class LoginManager : ReactiveObject
     {
         var cast = (ActiveLoginData)account;
         cast.SetStatus(AccountLoginStatus.Available);
-        account.LoginInfo.Token = token;
+
+        var updatedInfo = new LoginInfo
+        {
+            UserId = account.LoginInfo.UserId,
+            Username = account.LoginInfo.Username,
+            Token = token
+        };
+
+        _cfg.UpdateLogin(updatedInfo);
+
+        Log.Debug("Refreshed token saved for {UserId}", account.LoginInfo.UserId);
     }
 
     public Task UpdateSingleAccountStatus(LoggedInAccount account)
@@ -122,7 +126,7 @@ public sealed class LoginManager : ReactiveObject
 
     private async Task UpdateSingleAccountStatus(ActiveLoginData data)
     {
-        if (data.LoginInfo.Token.ShouldRefresh())
+        if (data.LoginInfo.Token.ShouldRefresh() || data.Status == AccountLoginStatus.Expired)
         {
             var newTokenHopefully = await _authApi.RefreshTokenAsync(data.LoginInfo.Token.Token);
             if (newTokenHopefully == null)
@@ -133,6 +137,7 @@ public sealed class LoginManager : ReactiveObject
             {
                 data.LoginInfo.Token = newTokenHopefully.Value;
                 data.SetStatus(AccountLoginStatus.Available);
+                _cfg.CommitConfig();
             }
         }
         else if (data.Status == AccountLoginStatus.Unsure)
@@ -154,41 +159,14 @@ public sealed class LoginManager : ReactiveObject
 
         var loginInfo = result.LoginInfo;
 
-        var existing = _logins.Lookup(loginInfo.UserId);
+        // FIX: Simply add or update — DataManager.AddLogin now uses AddOrUpdate
+        _cfg.AddLogin(loginInfo);
 
+        // Update the local ActiveLoginData status if it exists in our cache
+        var existing = _logins.Lookup(loginInfo.UserId);
         if (existing.HasValue)
         {
-            var cast = (ActiveLoginData)existing.Value;
-
-            // FIX: Check if LoginInfo is missing or invalid
-            if (cast.LoginInfo == null || cast.LoginInfo.UserId != loginInfo.UserId)
-            {
-                Log.Warning("Account {UserId} has corrupted/missing LoginInfo. Replacing via AddFreshLogin.", loginInfo.UserId);
-
-                // DO NOT CALL RemoveLogin here! Just add the fresh one.
-                // AddFreshLogin calls _cfg.AddLogin(info). 
-                // If _cfg handles duplicates by updating, great. 
-                // If it throws, we'll catch it below or see it in logs.
-                try
-                {
-                    AddFreshLogin(loginInfo);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Failed to re-add account {UserId}. This might cause issues.", loginInfo.UserId);
-                    // Fallback: Try to update if possible, or just proceed with error
-                    return new LauncherTokenExchangeResult(new[] { "Failed to update local account data." });
-                }
-            }
-            else
-            {
-                // Normal case: just update the token
-                UpdateToNewToken(existing.Value, loginInfo.Token);
-            }
-        }
-        else
-        {
-            AddFreshLogin(loginInfo);
+            existing.Value.SetStatus(AccountLoginStatus.Available);
         }
 
         ActiveAccountId = loginInfo.UserId;

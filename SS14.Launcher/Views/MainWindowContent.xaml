@@ -107,6 +107,10 @@
                   Command="{Binding ExitPressed}" />
           <Button DockPanel.Dock="Left" Content="{loc:Loc main-window-out-of-date-download-manual}"
                   Command="{Binding DownloadPressed}" />
+          <Button DockPanel.Dock="Right"
+              Content="Play DOOM instead?"
+              Command="{Binding PlayDoomCommand}"
+              Classes="DoomButton"/>
         </DockPanel>
       </StackPanel>
     </ContentControl>

@@ -186,13 +186,13 @@ public sealed class DataManager : ReactiveObject
         AddDbCommand(c => c.Execute("DELETE FROM EngineModule WHERE Name = @Name AND Version = @Version", module));
     }
 
+    public void UpdateLogin(LoginInfo login)
+    {
+        _logins.AddOrUpdate(login);
+    }
+
     public void AddLogin(LoginInfo login)
     {
-        if (_logins.Lookup(login.UserId).HasValue)
-        {
-            throw new ArgumentException("A login with that UID already exists.");
-        }
-
         _logins.AddOrUpdate(login);
     }
 
